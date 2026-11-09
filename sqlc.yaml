@@ -1,0 +1,27 @@
+version: "2"
+sql:
+  - engine: sqlite
+    schema:
+      - internal/ingest/schema.sql
+      - internal/storage/views.sql
+    queries: internal/storage/queries
+    gen:
+      go:
+        package: dbgen
+        out: internal/storage/dbgen
+        emit_empty_slices: true
+        rename:
+          iem_key: IEMKey
+          iem_count: IEMCount
+          url: URL
+          final_url: FinalURL
+          url_type: URLType
+          data_url: DataURL
+          sha256: SHA256
+          http_status: HTTPStatus
+          frequency_hz: FrequencyHz
+          spl_db: SPLDB
+          values_json: ValuesJSON
+          raw_json: RawJSON
+          headers_json: HeadersJSON
+          parse_issues_json: ParseIssuesJSON

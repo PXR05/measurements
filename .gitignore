@@ -1,0 +1,2 @@
+/internal/data/raw_cache/*
+/internal/data/*.sqlite*
