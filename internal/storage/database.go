@@ -45,7 +45,7 @@ func InstallViews(ctx context.Context, db *sql.DB) error {
 	defer tx.Rollback()
 	for _, name := range []string{
 		"api_catalog", "api_source_records", "api_current_catalog", "api_current_records",
-		"api_current_phone_catalog", "api_current_phones",
+		"api_current_phone_catalog", "api_raw_phone_catalog", "api_current_phones",
 		"api_ranked_measurements", "api_ranked_books", "api_ranked_sources",
 	} {
 		if _, err = tx.ExecContext(ctx, "DROP VIEW IF EXISTS "+name); err != nil {

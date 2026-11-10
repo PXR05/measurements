@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"measurements/internal/api/shared"
+	"measurements/internal/storage"
 	"measurements/internal/storage/dbgen"
 )
 
@@ -42,6 +43,14 @@ func (a *Handler) List(w http.ResponseWriter, r *http.Request) {
 		a.Respond.WriteError(w, r, err)
 		return
 	}
+
+	if brands != "[]" {
+		if err = a.DB.QueryRowContext(r.Context(), `SELECT json_group_array(coalesce(a.canonical_brand,j.value)) FROM json_each(?) j LEFT JOIN brand_identity_aliases a ON a.brand_key=j.value`, brands).Scan(&brands); err != nil {
+			a.Respond.WriteError(w, r, err)
+			return
+		}
+	}
+
 	var available sql.NullInt64
 	if values.Has("has_measurements") {
 		value, err := shared.BoolValue(values, "has_measurements")
@@ -83,6 +92,11 @@ func (a *Handler) Detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
+	brand, name, err = storage.ResolveIEM(r.Context(), tx, brand, name)
+	if err != nil {
+		a.Respond.WriteError(w, r, err)
+		return
+	}
 	queries := dbgen.New(tx)
 	item, err := queries.GetIEM(r.Context(), dbgen.GetIEMParams{BrandKey: brand, IEMKey: name})
 	if err != nil {
@@ -117,6 +131,11 @@ func (a *Handler) Measurements(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	brand, name, err := parseIEMID(r.PathValue("iemID"))
+	if err != nil {
+		a.Respond.WriteError(w, r, err)
+		return
+	}
+	brand, name, err = storage.ResolveIEM(r.Context(), a.DB, brand, name)
 	if err != nil {
 		a.Respond.WriteError(w, r, err)
 		return

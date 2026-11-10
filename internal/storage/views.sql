@@ -1,5 +1,21 @@
 CREATE INDEX IF NOT EXISTS resource_timestamps ON resources(id, fetched_at);
 
+CREATE TABLE IF NOT EXISTS iem_identity_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL CHECK(kind IN ('merge', 'dismiss')),
+    left_brand TEXT NOT NULL, left_name TEXT NOT NULL,
+    right_brand TEXT NOT NULL, right_name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS iem_identity_aliases (
+    brand_key TEXT NOT NULL, iem_key TEXT NOT NULL,
+    canonical_brand TEXT NOT NULL, canonical_name TEXT NOT NULL,
+    PRIMARY KEY (brand_key, iem_key)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS brand_identity_aliases (
+    brand_key TEXT PRIMARY KEY,
+    canonical_brand TEXT NOT NULL
+) WITHOUT ROWID;
+
 CREATE VIEW IF NOT EXISTS api_ranked_sources AS
 SELECT s.*, row_number() OVER (
     PARTITION BY s.data_url, s.type
@@ -88,11 +104,14 @@ LEFT JOIN measurements m ON m.variant_id = v.id
 LEFT JOIN resources r ON r.id = m.resource_id;
 
 CREATE VIEW IF NOT EXISTS api_catalog AS
-SELECT *,
+SELECT phone.*,
     CAST(json_array(data_url, type) AS TEXT) AS source_key,
-    CAST(lower(trim(brand, char(9)||char(10)||char(13)||' ')) AS TEXT) AS brand_key,
-    CAST(lower(trim(name, char(9)||char(10)||char(13)||' ')) AS TEXT) AS iem_key
-FROM api_source_records
+    CAST(coalesce(a.canonical_brand, ba.canonical_brand, lower(trim(brand, char(9)||char(10)||char(13)||' '))) AS TEXT) AS brand_key,
+    CAST(coalesce(a.canonical_name, lower(trim(name, char(9)||char(10)||char(13)||' '))) AS TEXT) AS iem_key
+FROM api_source_records phone
+LEFT JOIN brand_identity_aliases ba ON ba.brand_key = lower(trim(brand, char(9)||char(10)||char(13)||' '))
+LEFT JOIN iem_identity_aliases a ON a.brand_key = coalesce(ba.canonical_brand, lower(trim(brand, char(9)||char(10)||char(13)||' ')))
+    AND a.iem_key = lower(trim(name, char(9)||char(10)||char(13)||' '))
 WHERE trim(name, char(9)||char(10)||char(13)||' ') <> ''
   AND (lower(trim(type)) IN ('iem', 'iems') OR (
       lower(trim(type)) = '5128'
@@ -102,11 +121,14 @@ WHERE trim(name, char(9)||char(10)||char(13)||' ') <> ''
   ));
 
 CREATE VIEW IF NOT EXISTS api_current_catalog AS
-SELECT *,
+SELECT phone.*,
     CAST(json_array(data_url, type) AS TEXT) AS source_key,
-    CAST(lower(trim(brand, char(9)||char(10)||char(13)||' ')) AS TEXT) AS brand_key,
-    CAST(lower(trim(name, char(9)||char(10)||char(13)||' ')) AS TEXT) AS iem_key
-FROM api_current_records
+    CAST(coalesce(a.canonical_brand, ba.canonical_brand, lower(trim(brand, char(9)||char(10)||char(13)||' '))) AS TEXT) AS brand_key,
+    CAST(coalesce(a.canonical_name, lower(trim(name, char(9)||char(10)||char(13)||' '))) AS TEXT) AS iem_key
+FROM api_current_records phone
+LEFT JOIN brand_identity_aliases ba ON ba.brand_key = lower(trim(brand, char(9)||char(10)||char(13)||' '))
+LEFT JOIN iem_identity_aliases a ON a.brand_key = coalesce(ba.canonical_brand, lower(trim(brand, char(9)||char(10)||char(13)||' ')))
+    AND a.iem_key = lower(trim(name, char(9)||char(10)||char(13)||' '))
 WHERE trim(name, char(9)||char(10)||char(13)||' ') <> ''
   AND (lower(trim(type)) IN ('iem', 'iems') OR (
       lower(trim(type)) = '5128'
@@ -115,7 +137,7 @@ WHERE trim(name, char(9)||char(10)||char(13)||' ') <> ''
       AND instr(lower(data_url), '/earbud') = 0
   ));
 
-CREATE VIEW IF NOT EXISTS api_current_phone_catalog AS
+CREATE VIEW IF NOT EXISTS api_raw_phone_catalog AS
 SELECT *,
     CAST(json_array(data_url, type) AS TEXT) AS source_key,
     CAST(lower(trim(brand, char(9)||char(10)||char(13)||' ')) AS TEXT) AS brand_key,
@@ -128,3 +150,14 @@ WHERE trim(name, char(9)||char(10)||char(13)||' ') <> ''
       AND instr(lower(data_url), '/headset') = 0
       AND instr(lower(data_url), '/earbud') = 0
   ));
+
+CREATE VIEW IF NOT EXISTS api_current_phone_catalog AS
+SELECT phone.history, phone.source_id, phone.source, phone.source_name,
+    phone.type, phone.folder, phone.data_url, phone.delta_ready,
+    phone.brand, phone.record_id, phone.name, phone.price,
+    phone.review_score, phone.review_link, phone.shop_link, phone.source_key,
+    CAST(coalesce(a.canonical_brand, ba.canonical_brand, phone.brand_key) AS TEXT) AS brand_key,
+    CAST(coalesce(a.canonical_name, phone.iem_key) AS TEXT) AS iem_key
+FROM api_raw_phone_catalog phone
+LEFT JOIN brand_identity_aliases ba ON ba.brand_key = phone.brand_key
+LEFT JOIN iem_identity_aliases a ON a.brand_key = coalesce(ba.canonical_brand, phone.brand_key) AND a.iem_key = phone.iem_key;
