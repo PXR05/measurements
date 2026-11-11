@@ -1,69 +1,73 @@
 -- name: ListIEMSources :many
-SELECT source_id,
-    source AS source_username,
-    source_name,
-    type AS source_type,
-    folder AS source_folder,
-    data_url AS source_data_url,
-    record_id,
-    brand,
-    name,
+SELECT record_id,
+    source_id,
+    source AS username,
+    source_name AS name,
+    type,
+    folder,
+    data_url,
+    config_resource_id,
+    raw_brand AS brand_name,
+    raw_name AS iem_name,
     price,
     review_score,
     review_link,
-    shop_link,
-    count(DISTINCT CASE WHEN variant_id > 0 THEN variant_id END) AS variant_count,
-    count(DISTINCT CASE WHEN point_count > 0 THEN measurement_id END) AS measurement_count
-FROM api_current_catalog
-WHERE history = 0 AND brand_key = sqlc.arg(brand_key) AND iem_key = sqlc.arg(iem_key)
-GROUP BY source_id, record_id
-ORDER BY source, type, source_id, record_id;
+    shop_link
+FROM api_current_phone_catalog
+WHERE brand_key = sqlc.arg(brand_key) AND iem_key = sqlc.arg(iem_key)
+ORDER BY source COLLATE NOCASE, type COLLATE NOCASE, source_id, record_id;
+
+-- name: ListIEMMeasurements :many
+SELECT m.id,
+    p.record_id,
+    v.suffix AS label,
+    v.file_stem,
+    m.channel,
+    m.sample,
+    m.point_count,
+    r.url,
+    r.fetched_at
+FROM api_current_phone_catalog p
+JOIN variants v ON v.phone_id = p.record_id
+JOIN measurements m ON m.variant_id = v.id
+JOIN resources r ON r.id = m.resource_id
+WHERE p.brand_key = sqlc.arg(brand_key) AND p.iem_key = sqlc.arg(iem_key)
+    AND m.point_count > 0 AND r.status BETWEEN 200 AND 299
+    AND m.id = (
+        SELECT max(m2.id) FROM measurements m2
+        WHERE m2.variant_id = v.id AND m2.channel = m.channel AND m2.sample = m.sample
+    )
+ORDER BY v.id, m.channel COLLATE NOCASE, m.sample COLLATE NOCASE, m.id;
 
 -- name: MeasurementExists :one
 SELECT EXISTS(
-    SELECT 1 FROM api_catalog
-    WHERE measurement_id = ? AND history = 1 AND point_count > 0 AND http_status BETWEEN 200 AND 299
+    SELECT 1 FROM measurements m
+    JOIN resources r ON r.id = m.resource_id
+    WHERE m.id = ? AND m.point_count > 0 AND r.status BETWEEN 200 AND 299
 );
 
 -- name: GetMeasurementRaw :one
 SELECT r.body, r.sha256, r.fetched_at
-FROM resources r
-WHERE r.id = (
-  SELECT resource_id
-  FROM api_catalog
-  WHERE measurement_id = ? AND point_count > 0 AND http_status BETWEEN 200 AND 299 AND history = 1 LIMIT 1
-);
-
+FROM measurements m
+JOIN resources r ON r.id = m.resource_id
+WHERE m.id = ? AND m.point_count > 0 AND r.status BETWEEN 200 AND 299;
 
 -- name: ListPoints :many
-WITH params AS (
-    SELECT CAST(sqlc.arg(measurement_id) AS INTEGER) AS p_measurement_id,
-    CAST(sqlc.narg(min_frequency) AS REAL) AS p_min_frequency,
-    CAST(sqlc.narg(max_frequency) AS REAL) AS p_max_frequency,
-    CAST(sqlc.arg(sort) AS TEXT) AS p_sort,
-    CAST(sqlc.arg(direction) AS TEXT) AS p_direction,
-    CAST(sqlc.arg(page_limit) AS INTEGER) AS p_page_limit,
-    CAST(sqlc.arg(page_offset) AS INTEGER) AS p_page_offset
-)
-SELECT measurement_points.* FROM params CROSS JOIN measurement_points
-WHERE measurement_id = p_measurement_id
-  AND (p_min_frequency IS NULL OR frequency_hz >= p_min_frequency)
-  AND (p_max_frequency IS NULL OR frequency_hz <= p_max_frequency)
+SELECT measurement_id, ordinal, line_number, frequency_hz, spl_db, phase_degrees, values_json
+FROM measurement_points
+WHERE measurement_id = sqlc.arg(measurement_id)
+  AND (sqlc.narg(min_frequency) IS NULL OR frequency_hz >= sqlc.narg(min_frequency))
+  AND (sqlc.narg(max_frequency) IS NULL OR frequency_hz <= sqlc.narg(max_frequency))
 ORDER BY
-  CASE WHEN p_sort = 'frequency' AND p_direction = 'asc' THEN frequency_hz END ASC,
-  CASE WHEN p_sort = 'frequency' AND p_direction = 'desc' THEN frequency_hz END DESC,
-  CASE WHEN p_sort = 'index' AND p_direction = 'desc' THEN ordinal END DESC,
+  CASE WHEN sqlc.arg(sort) = 'frequency' AND sqlc.arg(direction) = 'asc' THEN frequency_hz END ASC,
+  CASE WHEN sqlc.arg(sort) = 'frequency' AND sqlc.arg(direction) = 'desc' THEN frequency_hz END DESC,
+  CASE WHEN sqlc.arg(sort) = 'index' AND sqlc.arg(direction) = 'desc' THEN ordinal END DESC,
   ordinal ASC
-LIMIT (SELECT p_page_limit FROM params) OFFSET (SELECT p_page_offset FROM params);
-
+LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 
 -- name: CountPoints :one
-WITH params AS (
-    SELECT CAST(sqlc.arg(measurement_id) AS INTEGER) AS p_measurement_id,
-    CAST(sqlc.narg(min_frequency) AS REAL) AS p_min_frequency,
-    CAST(sqlc.narg(max_frequency) AS REAL) AS p_max_frequency
-)
-SELECT count(*) FROM params CROSS JOIN measurement_points
-WHERE measurement_id = p_measurement_id
-  AND (p_min_frequency IS NULL OR frequency_hz >= p_min_frequency)
-  AND (p_max_frequency IS NULL OR frequency_hz <= p_max_frequency);
+SELECT count(*)
+FROM measurement_points
+WHERE measurement_id = sqlc.arg(measurement_id)
+  AND (sqlc.narg(min_frequency) IS NULL OR frequency_hz >= sqlc.narg(min_frequency))
+  AND (sqlc.narg(max_frequency) IS NULL OR frequency_hz <= sqlc.narg(max_frequency));

@@ -14,7 +14,7 @@ type sourceConfiguration struct {
 	calibrationFile *string
 }
 
-func loadConfigurations(ctx context.Context, queries *dbgen.Queries, rows []dbgen.ListMeasurementsRow) (map[int64]sourceConfiguration, error) {
+func loadConfigurations(ctx context.Context, queries *dbgen.Queries, rows []dbgen.ListIEMSourcesRow) (map[int64]sourceConfiguration, error) {
 	ids := make([]int64, 0)
 	seen := make(map[int64]bool)
 	for _, row := range rows {

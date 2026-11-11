@@ -7,43 +7,25 @@ package dbgen
 
 import (
 	"context"
-	"database/sql"
 )
 
 const countIEMs = `-- name: CountIEMs :one
-WITH params AS (
-    SELECT CAST(?1 AS TEXT) AS search_text,
-        CAST(?2 AS TEXT) AS brands,
-        CAST(?3 AS INTEGER) AS has_measurements
+SELECT count(*) FROM (
+    SELECT 1
+    FROM api_current_phone_catalog
+    WHERE instr(iem_key, lower(?1)) > 0
+        AND (?2 = '[]' OR brand_key IN (SELECT value FROM json_each(?2)))
+    GROUP BY brand_key, iem_key
 )
-SELECT CAST(CASE WHEN (SELECT has_measurements FROM params) IS NULL THEN (
-    SELECT count(*) FROM (
-        SELECT brand_key, iem_key
-        FROM params CROSS JOIN api_current_phone_catalog
-        WHERE instr(lower(name), lower(params.search_text)) > 0
-            AND (params.brands = '[]' OR brand_key IN (SELECT value FROM json_each(params.brands)))
-        GROUP BY brand_key, iem_key
-    )
-) ELSE (
-    SELECT count(*) FROM (
-        SELECT brand_key, iem_key
-        FROM params CROSS JOIN api_current_catalog
-        WHERE instr(lower(name), lower(params.search_text)) > 0
-            AND (params.brands = '[]' OR brand_key IN (SELECT value FROM json_each(params.brands)))
-        GROUP BY brand_key, iem_key
-        HAVING (count(CASE WHEN point_count > 0 THEN 1 END) > 0) = params.has_measurements
-    )
-) END AS INTEGER) AS total
 `
 
 type CountIEMsParams struct {
-	SearchText      string
-	Brands          string
-	HasMeasurements sql.NullInt64
+	SearchText string
+	Brands     string
 }
 
 func (q *Queries) CountIEMs(ctx context.Context, arg CountIEMsParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countIEMs, arg.SearchText, arg.Brands, arg.HasMeasurements)
+	row := q.db.QueryRowContext(ctx, countIEMs, arg.SearchText, arg.Brands)
 	var total int64
 	err := row.Scan(&total)
 	return total, err
@@ -52,13 +34,11 @@ func (q *Queries) CountIEMs(ctx context.Context, arg CountIEMsParams) (int64, er
 const getIEM = `-- name: GetIEM :one
 SELECT brand_key,
     iem_key,
-    CAST(min(trim(brand)) AS TEXT) AS brand_name,
-    CAST(min(trim(name)) AS TEXT) AS name,
-    count(DISTINCT source_key) AS source_count,
-    count(DISTINCT CASE WHEN variant_id > 0 THEN variant_id END) AS variant_count,
-    count(DISTINCT CASE WHEN point_count > 0 THEN measurement_id END) AS measurement_count
-FROM api_current_catalog
-WHERE history = 0 AND brand_key = ?1 AND iem_key = ?2
+    brand AS brand_name,
+    name,
+    count(DISTINCT source_id) AS source_count
+FROM api_current_phone_catalog
+WHERE brand_key = ?1 AND iem_key = ?2
 GROUP BY brand_key, iem_key
 `
 
@@ -68,13 +48,11 @@ type GetIEMParams struct {
 }
 
 type GetIEMRow struct {
-	BrandKey         string
-	IEMKey           string
-	BrandName        string
-	Name             string
-	SourceCount      int64
-	VariantCount     int64
-	MeasurementCount int64
+	BrandKey    string
+	IEMKey      string
+	BrandName   string
+	Name        string
+	SourceCount int64
 }
 
 func (q *Queries) GetIEM(ctx context.Context, arg GetIEMParams) (GetIEMRow, error) {
@@ -86,100 +64,60 @@ func (q *Queries) GetIEM(ctx context.Context, arg GetIEMParams) (GetIEMRow, erro
 		&i.BrandName,
 		&i.Name,
 		&i.SourceCount,
-		&i.VariantCount,
-		&i.MeasurementCount,
 	)
 	return i, err
 }
 
 const listIEMs = `-- name: ListIEMs :many
-WITH params AS (
-    SELECT CAST(?1 AS TEXT) AS search_text,
-        CAST(?2 AS TEXT) AS brands,
-        CAST(?3 AS INTEGER) AS has_measurements,
-        CAST(?4 AS TEXT) AS sort,
-        CAST(?5 AS TEXT) AS direction,
-        CAST(?6 AS INTEGER) AS page_limit,
-        CAST(?7 AS INTEGER) AS page_offset
-), catalog AS (
-    SELECT brand_key, iem_key, brand, name, source_key, record_id
-    FROM params CROSS JOIN api_current_phone_catalog
-    WHERE instr(lower(name), lower(params.search_text)) > 0
-        AND (params.brands = '[]' OR brand_key IN (SELECT value FROM json_each(params.brands)))
-    LIMIT -1
-), summaries AS (
-    SELECT brand_key, iem_key,
-        CAST(min(trim(brand)) AS TEXT) AS brand_name,
-        CAST(min(trim(name)) AS TEXT) AS name,
-        count(DISTINCT source_key) AS source_count
-    FROM params CROSS JOIN catalog
-    GROUP BY brand_key, iem_key
-), ordered AS (
-    SELECT summaries.brand_key, summaries.iem_key, summaries.brand_name, summaries.name, summaries.source_count,
-        CASE params.sort
-            WHEN 'name' THEN name
-            WHEN 'brand' THEN brand_name
-            WHEN 'sources' THEN source_count
-        END AS sort_value
-    FROM summaries CROSS JOIN params
-), page AS (
-    SELECT ordered.brand_key, ordered.iem_key, ordered.brand_name, ordered.name, ordered.source_count, ordered.sort_value FROM ordered CROSS JOIN params
-    ORDER BY
-        CASE WHEN direction = 'asc' THEN sort_value END COLLATE NOCASE ASC,
-        CASE WHEN direction = 'desc' THEN sort_value END COLLATE NOCASE DESC,
-        brand_key, iem_key
-    LIMIT (SELECT page_limit FROM params) OFFSET (SELECT page_offset FROM params)
-)
-SELECT page.brand_key, page.iem_key, page.brand_name, page.name, page.source_count,
-    (SELECT count(DISTINCT v.id)
-     FROM catalog phone
-     JOIN variants v ON v.phone_id = phone.record_id
-     WHERE phone.brand_key = page.brand_key AND phone.iem_key = page.iem_key) AS variant_count,
-    CAST((
-        SELECT count(DISTINCT m.id)
-        FROM catalog c
-        JOIN variants v ON v.phone_id = c.record_id
-        CROSS JOIN measurements m ON m.variant_id = v.id AND m.id = (
-            SELECT latest.id FROM measurements latest
-            JOIN resources r ON r.id = latest.resource_id
-            WHERE latest.variant_id = v.id AND latest.channel = m.channel AND latest.sample = m.sample
-            ORDER BY julianday(r.fetched_at) DESC, latest.id DESC LIMIT 1
-        )
-        WHERE c.brand_key = page.brand_key AND c.iem_key = page.iem_key
-            AND m.point_count > 0
-    ) AS INTEGER) AS measurement_count
-FROM page CROSS JOIN params
+SELECT brand_key,
+    iem_key,
+    brand AS brand_name,
+    name,
+    count(DISTINCT source_id) AS source_count
+FROM api_current_phone_catalog
+WHERE instr(iem_key, lower(?1)) > 0
+    AND (?2 = '[]' OR brand_key IN (SELECT value FROM json_each(?2)))
+GROUP BY brand_key, iem_key
 ORDER BY
-    CASE WHEN direction = 'asc' THEN sort_value END COLLATE NOCASE ASC,
-    CASE WHEN direction = 'desc' THEN sort_value END COLLATE NOCASE DESC,
-    page.brand_key, page.iem_key
+    CASE WHEN ?4 = 'asc' THEN
+        CASE ?3
+            WHEN 'name' THEN iem_key
+            WHEN 'brand' THEN brand_key
+            WHEN 'sources' THEN count(DISTINCT source_id)
+        END
+    END ASC,
+    CASE WHEN ?4 = 'desc' THEN
+        CASE ?3
+            WHEN 'name' THEN iem_key
+            WHEN 'brand' THEN brand_key
+            WHEN 'sources' THEN count(DISTINCT source_id)
+        END
+    END DESC,
+    brand_key, iem_key
+LIMIT ?5 OFFSET ?6
 `
 
 type ListIEMsParams struct {
-	SearchText      string
-	Brands          string
-	HasMeasurements sql.NullInt64
-	Sort            string
-	Direction       string
-	PageLimit       int64
-	PageOffset      int64
+	SearchText string
+	Brands     string
+	Sort       string
+	Direction  string
+	PageLimit  int64
+	PageOffset int64
 }
 
 type ListIEMsRow struct {
-	BrandKey         string
-	IEMKey           string
-	BrandName        string
-	Name             string
-	SourceCount      int64
-	VariantCount     int64
-	MeasurementCount int64
+	BrandKey    string
+	IEMKey      string
+	BrandName   string
+	Name        string
+	SourceCount int64
 }
 
 func (q *Queries) ListIEMs(ctx context.Context, arg ListIEMsParams) ([]ListIEMsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listIEMs,
 		arg.SearchText,
 		arg.Brands,
-		arg.HasMeasurements,
 		arg.Sort,
 		arg.Direction,
 		arg.PageLimit,
@@ -198,104 +136,6 @@ func (q *Queries) ListIEMs(ctx context.Context, arg ListIEMsParams) ([]ListIEMsR
 			&i.BrandName,
 			&i.Name,
 			&i.SourceCount,
-			&i.VariantCount,
-			&i.MeasurementCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listIEMsByMeasurements = `-- name: ListIEMsByMeasurements :many
-WITH params AS (
-    SELECT CAST(?1 AS TEXT) AS search_text,
-        CAST(?2 AS TEXT) AS brands,
-        CAST(?3 AS INTEGER) AS has_measurements,
-        CAST(?4 AS TEXT) AS sort,
-        CAST(?5 AS TEXT) AS direction,
-        CAST(?6 AS INTEGER) AS page_limit,
-        CAST(?7 AS INTEGER) AS page_offset
-)
-SELECT result.brand_key, result.iem_key, result.brand_name, result.name, result.source_count, result.variant_count, result.measurement_count FROM (
-    SELECT brand_key, iem_key,
-        CAST(min(trim(brand)) AS TEXT) AS brand_name,
-        CAST(min(trim(name)) AS TEXT) AS name,
-        count(DISTINCT source_key) AS source_count,
-        count(DISTINCT CASE WHEN variant_id > 0 THEN variant_id END) AS variant_count,
-        count(DISTINCT CASE WHEN point_count > 0 THEN measurement_id END) AS measurement_count
-    FROM api_current_catalog
-    WHERE instr(lower(name), lower((SELECT search_text FROM params))) > 0
-        AND ((SELECT brands FROM params) = '[]' OR brand_key IN (SELECT value FROM json_each((SELECT brands FROM params))))
-    GROUP BY brand_key, iem_key
-    HAVING (SELECT has_measurements FROM params) IS NULL
-        OR (count(CASE WHEN point_count > 0 THEN 1 END) > 0) = (SELECT has_measurements FROM params)
-) result CROSS JOIN params
-ORDER BY
-    CASE WHEN direction = 'asc' THEN
-        CASE sort WHEN 'name' THEN name WHEN 'brand' THEN brand_name
-            WHEN 'sources' THEN source_count WHEN 'measurements' THEN measurement_count END
-    END COLLATE NOCASE ASC,
-    CASE WHEN direction = 'desc' THEN
-        CASE sort WHEN 'name' THEN name WHEN 'brand' THEN brand_name
-            WHEN 'sources' THEN source_count WHEN 'measurements' THEN measurement_count END
-    END COLLATE NOCASE DESC,
-    brand_key, iem_key
-LIMIT (SELECT page_limit FROM params) OFFSET (SELECT page_offset FROM params)
-`
-
-type ListIEMsByMeasurementsParams struct {
-	SearchText      string
-	Brands          string
-	HasMeasurements sql.NullInt64
-	Sort            string
-	Direction       string
-	PageLimit       int64
-	PageOffset      int64
-}
-
-type ListIEMsByMeasurementsRow struct {
-	BrandKey         string
-	IEMKey           string
-	BrandName        string
-	Name             string
-	SourceCount      int64
-	VariantCount     int64
-	MeasurementCount int64
-}
-
-func (q *Queries) ListIEMsByMeasurements(ctx context.Context, arg ListIEMsByMeasurementsParams) ([]ListIEMsByMeasurementsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listIEMsByMeasurements,
-		arg.SearchText,
-		arg.Brands,
-		arg.HasMeasurements,
-		arg.Sort,
-		arg.Direction,
-		arg.PageLimit,
-		arg.PageOffset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListIEMsByMeasurementsRow{}
-	for rows.Next() {
-		var i ListIEMsByMeasurementsRow
-		if err := rows.Scan(
-			&i.BrandKey,
-			&i.IEMKey,
-			&i.BrandName,
-			&i.Name,
-			&i.SourceCount,
-			&i.VariantCount,
-			&i.MeasurementCount,
 		); err != nil {
 			return nil, err
 		}

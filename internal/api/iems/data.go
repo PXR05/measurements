@@ -7,24 +7,12 @@ import (
 )
 
 func fetchIEMs(ctx context.Context, q *dbgen.Queries, params dbgen.ListIEMsParams) ([]IEM, int64, error) {
-	var rows []dbgen.ListIEMsRow
-	var err error
-	if params.Sort == "measurements" || params.HasMeasurements.Valid {
-		matches, fetchErr := q.ListIEMsByMeasurements(ctx, dbgen.ListIEMsByMeasurementsParams(params))
-		if fetchErr != nil {
-			return nil, 0, fetchErr
-		}
-		for _, row := range matches {
-			rows = append(rows, dbgen.ListIEMsRow(row))
-		}
-	} else {
-		rows, err = q.ListIEMs(ctx, params)
-		if err != nil {
-			return nil, 0, err
-		}
+	rows, err := q.ListIEMs(ctx, params)
+	if err != nil {
+		return nil, 0, err
 	}
 	total, err := q.CountIEMs(ctx, dbgen.CountIEMsParams{
-		SearchText: params.SearchText, Brands: params.Brands, HasMeasurements: params.HasMeasurements,
+		SearchText: params.SearchText, Brands: params.Brands,
 	})
 	if err != nil {
 		return nil, 0, err
@@ -36,30 +24,37 @@ func fetchIEMs(ctx context.Context, q *dbgen.Queries, params dbgen.ListIEMsParam
 	return items, total, nil
 }
 
-func fetchMeasurements(ctx context.Context, q *dbgen.Queries, params dbgen.ListMeasurementsParams) ([]Measurement, int64, error) {
-	rows, err := q.ListMeasurements(ctx, params)
+func fetchIEMDetail(ctx context.Context, q *dbgen.Queries, brand, name string) (IEMDetail, error) {
+	var detail IEMDetail
+	item, err := q.GetIEM(ctx, dbgen.GetIEMParams{BrandKey: brand, IEMKey: name})
 	if err != nil {
-		return nil, 0, err
+		return detail, err
 	}
-	configurations, err := loadConfigurations(ctx, q, rows)
+	sourceRows, err := q.ListIEMSources(ctx, dbgen.ListIEMSourcesParams{BrandKey: brand, IEMKey: name})
 	if err != nil {
-		return nil, 0, err
+		return detail, err
 	}
-	total, err := q.CountMeasurements(ctx, dbgen.CountMeasurementsParams{
-		BrandKey: params.BrandKey, IEMKey: params.IEMKey,
-		Sources: params.Sources, Types: params.Types, Channels: params.Channels,
-		Samples: params.Samples, MinPoints: params.MinPoints,
+	configurations, err := loadConfigurations(ctx, q, sourceRows)
+	if err != nil {
+		return detail, err
+	}
+	measurementRows, err := q.ListIEMMeasurements(ctx, dbgen.ListIEMMeasurementsParams{
+		BrandKey: brand,
+		IEMKey:   name,
 	})
 	if err != nil {
-		return nil, 0, err
+		return detail, err
 	}
-	items := make([]Measurement, 0, len(rows))
-	for _, row := range rows {
-		item := measurementResponse(row)
-		config := configurations[row.ConfigResourceID.Int64]
-		item.RigDescription = config.rigDescription
-		item.MeasurementCalibrationFile = config.calibrationFile
-		items = append(items, item)
+	byRecord := make(map[int64][]Measurement, len(sourceRows))
+	for _, row := range measurementRows {
+		byRecord[row.RecordID] = append(byRecord[row.RecordID], measurementResponse(row))
 	}
-	return items, total, nil
+	detail = IEMDetail{
+		IEM:     iemResponse(dbgen.ListIEMsRow(item)),
+		Sources: make([]Source, 0, len(sourceRows)),
+	}
+	for _, row := range sourceRows {
+		detail.Sources = append(detail.Sources, sourceResponse(row, configurations[row.ConfigResourceID.Int64], byRecord[row.RecordID]))
+	}
+	return detail, nil
 }

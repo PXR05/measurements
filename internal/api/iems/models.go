@@ -1,8 +1,6 @@
 package iems
 
 import (
-	"encoding/json"
-
 	"measurements/internal/api/brands"
 	"measurements/internal/storage/dbgen"
 )
@@ -15,58 +13,41 @@ type IEMReference struct {
 
 type IEM struct {
 	IEMReference
-	SourceCount      int `json:"source_count"`
-	VariantCount     int `json:"variant_count"`
-	MeasurementCount int `json:"measurement_count"`
-}
-
-type IEMSource struct {
-	Source           Source `json:"source"`
-	RecordID         int64  `json:"record_id"`
-	Brand            string `json:"brand"`
-	Name             string `json:"name"`
-	Price            string `json:"price"`
-	ReviewScore      string `json:"review_score"`
-	ReviewLink       string `json:"review_link"`
-	ShopLink         string `json:"shop_link"`
-	VariantCount     int    `json:"variant_count"`
-	MeasurementCount int    `json:"measurement_count"`
+	SourceCount int `json:"source_count"`
 }
 
 type IEMDetail struct {
 	IEM
-	Sources []IEMSource `json:"sources"`
-}
-
-type Measurement struct {
-	ID                         int64           `json:"id"`
-	IEM                        IEMReference    `json:"iem"`
-	Source                     Source          `json:"source"`
-	Variant                    Variant         `json:"variant"`
-	Channel                    string          `json:"channel"`
-	Sample                     string          `json:"sample"`
-	HTTPStatus                 int             `json:"http_status"`
-	PointCount                 int             `json:"point_count"`
-	ParseIssues                json.RawMessage `json:"parse_issues"`
-	URL                        string          `json:"url"`
-	FetchedAt                  string          `json:"fetched_at"`
-	RigDescription             *string         `json:"rig_description"`
-	MeasurementCalibrationFile *string         `json:"measurement_calibration_file"`
+	Sources []Source `json:"sources"`
 }
 
 type Source struct {
-	ID       int64  `json:"id"`
-	Username string `json:"username"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Folder   string `json:"folder"`
-	DataURL  string `json:"data_url"`
+	ID              int64         `json:"id"`
+	Username        string        `json:"username"`
+	Name            string        `json:"name"`
+	Type            string        `json:"type"`
+	Folder          string        `json:"folder"`
+	DataURL         string        `json:"data_url"`
+	RigDescription  *string       `json:"rig_description"`
+	CalibrationFile *string       `json:"calibration_file"`
+	BrandName       string        `json:"brand_name"`
+	IEMName         string        `json:"iem_name"`
+	Price           string        `json:"price"`
+	ReviewScore     string        `json:"review_score"`
+	ReviewLink      string        `json:"review_link"`
+	ShopLink        string        `json:"shop_link"`
+	Measurements    []Measurement `json:"measurements"`
 }
 
-type Variant struct {
-	ID       int64  `json:"id"`
-	FileStem string `json:"file_stem"`
-	Suffix   string `json:"suffix"`
+type Measurement struct {
+	ID         int64  `json:"id"`
+	Label      string `json:"label"`
+	FileStem   string `json:"file_stem"`
+	Channel    string `json:"channel"`
+	Sample     string `json:"sample"`
+	PointCount int    `json:"point_count"`
+	URL        string `json:"url"`
+	FetchedAt  string `json:"fetched_at"`
 }
 
 func iemResponse(r dbgen.ListIEMsRow) IEM {
@@ -79,66 +60,42 @@ func iemResponse(r dbgen.ListIEMsRow) IEM {
 				Name: r.BrandName,
 			},
 		},
-		SourceCount:      int(r.SourceCount),
-		VariantCount:     int(r.VariantCount),
-		MeasurementCount: int(r.MeasurementCount),
+		SourceCount: int(r.SourceCount),
 	}
 }
 
-func sourceResponse(r dbgen.ListIEMSourcesRow) IEMSource {
-	item := IEMSource{
-		Source: Source{
-			ID:       r.SourceID,
-			Username: r.SourceUsername,
-			Name:     r.SourceName,
-			Type:     r.SourceType,
-			Folder:   r.SourceFolder,
-			DataURL:  r.SourceDataUrl,
-		},
-		RecordID:         r.RecordID,
-		Brand:            r.Brand,
-		Name:             r.Name,
-		Price:            r.Price,
-		ReviewScore:      r.ReviewScore,
-		ReviewLink:       r.ReviewLink,
-		ShopLink:         r.ShopLink,
-		VariantCount:     int(r.VariantCount),
-		MeasurementCount: int(r.MeasurementCount),
+func sourceResponse(r dbgen.ListIEMSourcesRow, cfg sourceConfiguration, measurements []Measurement) Source {
+	if measurements == nil {
+		measurements = make([]Measurement, 0)
 	}
-
-	return item
+	return Source{
+		ID:              r.SourceID,
+		Username:        r.Username,
+		Name:            r.Name,
+		Type:            r.Type,
+		Folder:          r.Folder,
+		DataURL:         r.DataURL,
+		RigDescription:  cfg.rigDescription,
+		CalibrationFile: cfg.calibrationFile,
+		BrandName:       r.BrandName,
+		IEMName:         r.IEMName,
+		Price:           r.Price,
+		ReviewScore:     r.ReviewScore,
+		ReviewLink:      r.ReviewLink,
+		ShopLink:        r.ShopLink,
+		Measurements:    measurements,
+	}
 }
 
-func measurementResponse(r dbgen.ListMeasurementsRow) Measurement {
+func measurementResponse(r dbgen.ListIEMMeasurementsRow) Measurement {
 	return Measurement{
-		ID: r.ID,
-		IEM: IEMReference{
-			ID:   iemID(r.BrandKey, r.IEMKey),
-			Name: r.Name,
-			Brand: brands.Reference{
-				ID:   brands.ID(r.BrandKey),
-				Name: r.BrandName,
-			},
-		},
-		Source: Source{
-			ID:       r.SourceID,
-			Username: r.SourceUsername,
-			Name:     r.SourceName,
-			Type:     r.SourceType,
-			Folder:   r.SourceFolder,
-			DataURL:  r.SourceDataUrl,
-		},
-		Variant: Variant{
-			ID:       r.VariantID,
-			FileStem: r.VariantFileStem,
-			Suffix:   r.VariantSuffix,
-		},
-		Channel:     r.Channel,
-		Sample:      r.Sample,
-		HTTPStatus:  int(r.HTTPStatus),
-		PointCount:  int(r.PointCount),
-		ParseIssues: json.RawMessage(r.ParseIssues),
-		URL:         r.URL,
-		FetchedAt:   r.FetchedAt,
+		ID:         r.ID,
+		Label:      r.Label,
+		FileStem:   r.FileStem,
+		Channel:    r.Channel,
+		Sample:     r.Sample,
+		PointCount: int(r.PointCount),
+		URL:        r.URL,
+		FetchedAt:  r.FetchedAt,
 	}
 }

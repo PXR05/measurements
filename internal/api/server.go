@@ -56,8 +56,8 @@ func (a *API) routes() {
 	a.mux.HandleFunc("GET /api/v1/{$}", a.index)
 	a.mux.HandleFunc("GET /api/v1/iems", iem.List)
 	a.mux.HandleFunc("GET /api/v1/iems/{id}", iem.Detail)
-	a.mux.HandleFunc("GET /api/v1/iems/{iemID}/measurements", iem.Measurements)
 	a.mux.HandleFunc("GET /api/v1/brands", brand.List)
+	a.mux.HandleFunc("GET /api/v1/brands/{id}", iem.ListByBrand)
 	a.mux.HandleFunc("GET /api/v1/measurements/{id}/points", measurement.Points)
 	a.mux.HandleFunc("GET /api/v1/measurements/{id}/raw", measurement.Raw)
 	a.mux.HandleFunc("/", a.notFound)
@@ -89,9 +89,9 @@ func (a *API) index(w http.ResponseWriter, r *http.Request) {
 		"version": "v1",
 		"routes": []string{
 			"GET /api/v1/brands",
+			"GET /api/v1/brands/{id}",
 			"GET /api/v1/iems",
 			"GET /api/v1/iems/{id}",
-			"GET /api/v1/iems/{id}/measurements",
 			"GET /api/v1/measurements/{id}/points",
 			"GET /api/v1/measurements/{id}/raw",
 		},

@@ -205,7 +205,7 @@ func rebuild(ctx context.Context, tx *sql.Tx) error {
 			return err
 		}
 	}
-	return nil
+	return storage.RefreshCatalog(ctx, tx)
 }
 
 func (s *Store) Decide(ctx context.Context, d Decision) error {

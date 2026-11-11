@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"measurements/internal/storage"
 	"measurements/internal/storage/dbgen"
 )
 
@@ -207,6 +208,10 @@ func Seed(ctx context.Context, o Options) (stats Stats, retErr error) {
 
 	if !matched && o.Site != "" {
 		return stats, fmt.Errorf("site %q not found", o.Site)
+	}
+
+	if err = storage.InstallViews(ctx, db); err != nil {
+		return stats, err
 	}
 
 	return stats, nil

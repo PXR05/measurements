@@ -8,212 +8,44 @@ import (
 	"database/sql"
 )
 
-type ApiCatalog struct {
-	History       int64
-	SourceID      int64
-	Source        string
-	SourceName    string
-	Type          string
-	Folder        string
-	DataURL       string
-	DeltaReady    int64
-	Brand         string
-	RecordID      int64
-	Name          string
-	Price         string
-	ReviewScore   string
-	ReviewLink    string
-	ShopLink      string
-	VariantID     int64
-	FileStem      string
-	Suffix        string
-	MeasurementID int64
-	Channel       string
-	Sample        string
-	ResourceID    int64
-	PointCount    int64
-	ParseIssues   string
-	URL           string
-	HTTPStatus    int64
-	FetchedAt     string
-	SourceKey     string
-	BrandKey      string
-	IEMKey        string
-}
-
-type ApiCurrentCatalog struct {
-	History       int64
-	SourceID      int64
-	Source        string
-	SourceName    string
-	Type          string
-	Folder        string
-	DataURL       string
-	DeltaReady    int64
-	Brand         string
-	RecordID      int64
-	Name          string
-	Price         string
-	ReviewScore   string
-	ReviewLink    string
-	ShopLink      string
-	VariantID     int64
-	FileStem      string
-	Suffix        string
-	MeasurementID int64
-	Channel       string
-	Sample        string
-	ResourceID    int64
-	PointCount    int64
-	ParseIssues   string
-	URL           string
-	HTTPStatus    int64
-	FetchedAt     string
-	SourceKey     string
-	BrandKey      string
-	IEMKey        string
-}
-
-type ApiCurrentPhone struct {
-	History     int64
-	SourceID    int64
-	Source      string
-	SourceName  string
-	Type        string
-	Folder      string
-	DataURL     string
-	DeltaReady  int64
-	Brand       string
-	RecordID    int64
-	Name        string
-	Price       string
-	ReviewScore string
-	ReviewLink  string
-	ShopLink    string
-}
-
 type ApiCurrentPhoneCatalog struct {
-	History     int64
-	SourceID    int64
-	Source      string
-	SourceName  string
-	Type        string
-	Folder      string
-	DataURL     string
-	DeltaReady  int64
-	Brand       string
-	RecordID    int64
-	Name        string
-	Price       string
-	ReviewScore string
-	ReviewLink  string
-	ShopLink    string
-	SourceKey   string
-	BrandKey    string
-	IEMKey      string
-}
-
-type ApiCurrentRecord struct {
-	History       int64
-	SourceID      int64
-	Source        string
-	SourceName    string
-	Type          string
-	Folder        string
-	DataURL       string
-	DeltaReady    int64
-	Brand         string
-	RecordID      int64
-	Name          string
-	Price         string
-	ReviewScore   string
-	ReviewLink    string
-	ShopLink      string
-	VariantID     int64
-	FileStem      string
-	Suffix        string
-	MeasurementID int64
-	Channel       string
-	Sample        string
-	ResourceID    int64
-	PointCount    int64
-	ParseIssues   string
-	URL           string
-	HTTPStatus    int64
-	FetchedAt     string
-}
-
-type ApiRankedBook struct {
-	ID               int64
 	SourceID         int64
-	ResourceID       int64
-	ConfigResourceID sql.NullInt64
-	DataURL          string
+	Source           string
+	SourceName       string
 	Type             string
-	Position         interface{}
-}
-
-type ApiRankedSource struct {
-	ID         int64
-	SiteID     int64
-	Ordinal    int64
-	Type       string
-	Folder     string
-	DeltaReady int64
-	DataURL    string
-	RawJSON    string
-	Position   interface{}
+	Folder           string
+	DataURL          string
+	ConfigResourceID sql.NullInt64
+	Brand            string
+	RawBrand         string
+	RecordID         int64
+	Name             string
+	RawName          string
+	Price            string
+	ReviewScore      string
+	ReviewLink       string
+	ShopLink         string
+	BrandKey         string
+	IEMKey           string
 }
 
 type ApiRawPhoneCatalog struct {
-	History     int64
-	SourceID    int64
-	Source      string
-	SourceName  string
-	Type        string
-	Folder      string
-	DataURL     string
-	DeltaReady  int64
-	Brand       string
-	RecordID    int64
-	Name        string
-	Price       string
-	ReviewScore string
-	ReviewLink  string
-	ShopLink    string
-	SourceKey   string
-	BrandKey    string
-	IEMKey      string
-}
-
-type ApiSourceRecord struct {
-	History       int64
-	SourceID      int64
-	Source        string
-	SourceName    string
-	Type          string
-	Folder        string
-	DataURL       string
-	DeltaReady    int64
-	Brand         string
-	RecordID      int64
-	Name          string
-	Price         string
-	ReviewScore   string
-	ReviewLink    string
-	ShopLink      string
-	VariantID     int64
-	FileStem      string
-	Suffix        string
-	MeasurementID int64
-	Channel       string
-	Sample        string
-	ResourceID    int64
-	PointCount    int64
-	ParseIssues   string
-	URL           string
-	HTTPStatus    int64
-	FetchedAt     string
+	SourceID         int64
+	Source           string
+	SourceName       string
+	Type             string
+	Folder           string
+	DataURL          string
+	ConfigResourceID sql.NullInt64
+	Brand            string
+	RecordID         int64
+	Name             string
+	Price            string
+	ReviewScore      string
+	ReviewLink       string
+	ShopLink         string
+	BrandKey         string
+	IEMKey           string
 }
 
 type Brand struct {

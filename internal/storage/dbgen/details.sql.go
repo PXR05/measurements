@@ -11,15 +11,11 @@ import (
 )
 
 const countPoints = `-- name: CountPoints :one
-WITH params AS (
-    SELECT CAST(?1 AS INTEGER) AS p_measurement_id,
-    CAST(?2 AS REAL) AS p_min_frequency,
-    CAST(?3 AS REAL) AS p_max_frequency
-)
-SELECT count(*) FROM params CROSS JOIN measurement_points
-WHERE measurement_id = p_measurement_id
-  AND (p_min_frequency IS NULL OR frequency_hz >= p_min_frequency)
-  AND (p_max_frequency IS NULL OR frequency_hz <= p_max_frequency)
+SELECT count(*)
+FROM measurement_points
+WHERE measurement_id = ?1
+  AND (?2 IS NULL OR frequency_hz >= ?2)
+  AND (?3 IS NULL OR frequency_hz <= ?3)
 `
 
 type CountPointsParams struct {
@@ -37,12 +33,9 @@ func (q *Queries) CountPoints(ctx context.Context, arg CountPointsParams) (int64
 
 const getMeasurementRaw = `-- name: GetMeasurementRaw :one
 SELECT r.body, r.sha256, r.fetched_at
-FROM resources r
-WHERE r.id = (
-  SELECT resource_id
-  FROM api_catalog
-  WHERE measurement_id = ? AND point_count > 0 AND http_status BETWEEN 200 AND 299 AND history = 1 LIMIT 1
-)
+FROM measurements m
+JOIN resources r ON r.id = m.resource_id
+WHERE m.id = ? AND m.point_count > 0 AND r.status BETWEEN 200 AND 299
 `
 
 type GetMeasurementRawRow struct {
@@ -58,26 +51,97 @@ func (q *Queries) GetMeasurementRaw(ctx context.Context, measurementID int64) (G
 	return i, err
 }
 
+const listIEMMeasurements = `-- name: ListIEMMeasurements :many
+SELECT m.id,
+    p.record_id,
+    v.suffix AS label,
+    v.file_stem,
+    m.channel,
+    m.sample,
+    m.point_count,
+    r.url,
+    r.fetched_at
+FROM api_current_phone_catalog p
+JOIN variants v ON v.phone_id = p.record_id
+JOIN measurements m ON m.variant_id = v.id
+JOIN resources r ON r.id = m.resource_id
+WHERE p.brand_key = ?1 AND p.iem_key = ?2
+    AND m.point_count > 0 AND r.status BETWEEN 200 AND 299
+    AND m.id = (
+        SELECT max(m2.id) FROM measurements m2
+        WHERE m2.variant_id = v.id AND m2.channel = m.channel AND m2.sample = m.sample
+    )
+ORDER BY v.id, m.channel COLLATE NOCASE, m.sample COLLATE NOCASE, m.id
+`
+
+type ListIEMMeasurementsParams struct {
+	BrandKey string
+	IEMKey   string
+}
+
+type ListIEMMeasurementsRow struct {
+	ID         int64
+	RecordID   int64
+	Label      string
+	FileStem   string
+	Channel    string
+	Sample     string
+	PointCount int64
+	URL        string
+	FetchedAt  string
+}
+
+func (q *Queries) ListIEMMeasurements(ctx context.Context, arg ListIEMMeasurementsParams) ([]ListIEMMeasurementsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listIEMMeasurements, arg.BrandKey, arg.IEMKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListIEMMeasurementsRow{}
+	for rows.Next() {
+		var i ListIEMMeasurementsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RecordID,
+			&i.Label,
+			&i.FileStem,
+			&i.Channel,
+			&i.Sample,
+			&i.PointCount,
+			&i.URL,
+			&i.FetchedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listIEMSources = `-- name: ListIEMSources :many
-SELECT source_id,
-    source AS source_username,
-    source_name,
-    type AS source_type,
-    folder AS source_folder,
-    data_url AS source_data_url,
-    record_id,
-    brand,
-    name,
+SELECT record_id,
+    source_id,
+    source AS username,
+    source_name AS name,
+    type,
+    folder,
+    data_url,
+    config_resource_id,
+    raw_brand AS brand_name,
+    raw_name AS iem_name,
     price,
     review_score,
     review_link,
-    shop_link,
-    count(DISTINCT CASE WHEN variant_id > 0 THEN variant_id END) AS variant_count,
-    count(DISTINCT CASE WHEN point_count > 0 THEN measurement_id END) AS measurement_count
-FROM api_current_catalog
-WHERE history = 0 AND brand_key = ?1 AND iem_key = ?2
-GROUP BY source_id, record_id
-ORDER BY source, type, source_id, record_id
+    shop_link
+FROM api_current_phone_catalog
+WHERE brand_key = ?1 AND iem_key = ?2
+ORDER BY source COLLATE NOCASE, type COLLATE NOCASE, source_id, record_id
 `
 
 type ListIEMSourcesParams struct {
@@ -86,21 +150,20 @@ type ListIEMSourcesParams struct {
 }
 
 type ListIEMSourcesRow struct {
-	SourceID         int64
-	SourceUsername   string
-	SourceName       string
-	SourceType       string
-	SourceFolder     string
-	SourceDataUrl    string
 	RecordID         int64
-	Brand            string
+	SourceID         int64
+	Username         string
 	Name             string
+	Type             string
+	Folder           string
+	DataURL          string
+	ConfigResourceID sql.NullInt64
+	BrandName        string
+	IEMName          string
 	Price            string
 	ReviewScore      string
 	ReviewLink       string
 	ShopLink         string
-	VariantCount     int64
-	MeasurementCount int64
 }
 
 func (q *Queries) ListIEMSources(ctx context.Context, arg ListIEMSourcesParams) ([]ListIEMSourcesRow, error) {
@@ -113,21 +176,20 @@ func (q *Queries) ListIEMSources(ctx context.Context, arg ListIEMSourcesParams) 
 	for rows.Next() {
 		var i ListIEMSourcesRow
 		if err := rows.Scan(
-			&i.SourceID,
-			&i.SourceUsername,
-			&i.SourceName,
-			&i.SourceType,
-			&i.SourceFolder,
-			&i.SourceDataUrl,
 			&i.RecordID,
-			&i.Brand,
+			&i.SourceID,
+			&i.Username,
 			&i.Name,
+			&i.Type,
+			&i.Folder,
+			&i.DataURL,
+			&i.ConfigResourceID,
+			&i.BrandName,
+			&i.IEMName,
 			&i.Price,
 			&i.ReviewScore,
 			&i.ReviewLink,
 			&i.ShopLink,
-			&i.VariantCount,
-			&i.MeasurementCount,
 		); err != nil {
 			return nil, err
 		}
@@ -143,25 +205,17 @@ func (q *Queries) ListIEMSources(ctx context.Context, arg ListIEMSourcesParams) 
 }
 
 const listPoints = `-- name: ListPoints :many
-WITH params AS (
-    SELECT CAST(?1 AS INTEGER) AS p_measurement_id,
-    CAST(?2 AS REAL) AS p_min_frequency,
-    CAST(?3 AS REAL) AS p_max_frequency,
-    CAST(?4 AS TEXT) AS p_sort,
-    CAST(?5 AS TEXT) AS p_direction,
-    CAST(?6 AS INTEGER) AS p_page_limit,
-    CAST(?7 AS INTEGER) AS p_page_offset
-)
-SELECT measurement_points.measurement_id, measurement_points.ordinal, measurement_points.line_number, measurement_points.frequency_hz, measurement_points.spl_db, measurement_points.phase_degrees, measurement_points.values_json FROM params CROSS JOIN measurement_points
-WHERE measurement_id = p_measurement_id
-  AND (p_min_frequency IS NULL OR frequency_hz >= p_min_frequency)
-  AND (p_max_frequency IS NULL OR frequency_hz <= p_max_frequency)
+SELECT measurement_id, ordinal, line_number, frequency_hz, spl_db, phase_degrees, values_json
+FROM measurement_points
+WHERE measurement_id = ?1
+  AND (?2 IS NULL OR frequency_hz >= ?2)
+  AND (?3 IS NULL OR frequency_hz <= ?3)
 ORDER BY
-  CASE WHEN p_sort = 'frequency' AND p_direction = 'asc' THEN frequency_hz END ASC,
-  CASE WHEN p_sort = 'frequency' AND p_direction = 'desc' THEN frequency_hz END DESC,
-  CASE WHEN p_sort = 'index' AND p_direction = 'desc' THEN ordinal END DESC,
+  CASE WHEN ?4 = 'frequency' AND ?5 = 'asc' THEN frequency_hz END ASC,
+  CASE WHEN ?4 = 'frequency' AND ?5 = 'desc' THEN frequency_hz END DESC,
+  CASE WHEN ?4 = 'index' AND ?5 = 'desc' THEN ordinal END DESC,
   ordinal ASC
-LIMIT (SELECT p_page_limit FROM params) OFFSET (SELECT p_page_offset FROM params)
+LIMIT ?6 OFFSET ?7
 `
 
 type ListPointsParams struct {
@@ -215,8 +269,9 @@ func (q *Queries) ListPoints(ctx context.Context, arg ListPointsParams) ([]Measu
 
 const measurementExists = `-- name: MeasurementExists :one
 SELECT EXISTS(
-    SELECT 1 FROM api_catalog
-    WHERE measurement_id = ? AND history = 1 AND point_count > 0 AND http_status BETWEEN 200 AND 299
+    SELECT 1 FROM measurements m
+    JOIN resources r ON r.id = m.resource_id
+    WHERE m.id = ? AND m.point_count > 0 AND r.status BETWEEN 200 AND 299
 )
 `
 
