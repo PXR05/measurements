@@ -43,7 +43,7 @@ func (a *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if brandFilter != "[]" {
-		if err = a.DB.QueryRowContext(r.Context(), `SELECT json_group_array(coalesce(a.canonical_brand,j.value)) FROM json_each(?) j LEFT JOIN brand_identity_aliases a ON a.brand_key=j.value`, brandFilter).Scan(&brandFilter); err != nil {
+		if brandFilter, err = dbgen.New(a.DB).ResolveBrandsJSON(r.Context(), brandFilter); err != nil {
 			a.Respond.WriteError(w, r, err)
 			return
 		}

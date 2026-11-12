@@ -2,8 +2,7 @@ version: "2"
 sql:
   - engine: sqlite
     schema:
-      - internal/ingest/schema.sql
-      - internal/storage/views.sql
+      - internal/storage/schema.sql
     queries: internal/storage/queries
     gen:
       go:

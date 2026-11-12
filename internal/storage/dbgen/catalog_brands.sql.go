@@ -11,7 +11,7 @@ import (
 
 const brandExists = `-- name: BrandExists :one
 SELECT EXISTS(
-    SELECT 1 FROM api_current_phone_catalog
+    SELECT 1 FROM phone_catalog
     WHERE brand_key = ?1
 )
 `
@@ -25,7 +25,7 @@ func (q *Queries) BrandExists(ctx context.Context, brandKey string) (bool, error
 
 const countBrands = `-- name: CountBrands :one
 SELECT count(DISTINCT brand_key)
-FROM api_current_phone_catalog
+FROM phone_catalog
 WHERE instr(brand_key, lower(?1)) > 0
 `
 
@@ -41,7 +41,7 @@ SELECT brand_key,
     brand AS name,
     count(DISTINCT iem_key) AS iem_count,
     count(DISTINCT source_id) AS source_count
-FROM api_current_phone_catalog
+FROM phone_catalog
 WHERE instr(brand_key, lower(?1)) > 0
 GROUP BY brand_key
 ORDER BY

@@ -8,7 +8,8 @@ import (
 	"database/sql"
 )
 
-type ApiCurrentPhoneCatalog struct {
+type PhoneCatalog struct {
+	RecordID         int64
 	SourceID         int64
 	Source           string
 	SourceName       string
@@ -16,36 +17,18 @@ type ApiCurrentPhoneCatalog struct {
 	Folder           string
 	DataURL          string
 	ConfigResourceID sql.NullInt64
+	BrandKey         string
+	IEMKey           string
 	Brand            string
-	RawBrand         string
-	RecordID         int64
 	Name             string
+	RawBrandKey      string
+	RawIEMKey        string
+	RawBrand         string
 	RawName          string
 	Price            string
 	ReviewScore      string
 	ReviewLink       string
 	ShopLink         string
-	BrandKey         string
-	IEMKey           string
-}
-
-type ApiRawPhoneCatalog struct {
-	SourceID         int64
-	Source           string
-	SourceName       string
-	Type             string
-	Folder           string
-	DataURL          string
-	ConfigResourceID sql.NullInt64
-	Brand            string
-	RecordID         int64
-	Name             string
-	Price            string
-	ReviewScore      string
-	ReviewLink       string
-	ShopLink         string
-	BrandKey         string
-	IEMKey           string
 }
 
 type Brand struct {

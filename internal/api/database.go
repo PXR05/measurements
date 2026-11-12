@@ -28,10 +28,5 @@ func OpenDatabase(ctx context.Context, path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("unsupported seed database schema %d; expected 1", version)
 	}
 
-	if err = storage.EnsureViews(ctx, path); err != nil {
-		db.Close()
-		return nil, err
-	}
-
 	return db, nil
 }

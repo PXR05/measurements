@@ -97,10 +97,50 @@ CREATE TABLE IF NOT EXISTS measurement_points (
  line_number INTEGER NOT NULL,
  frequency_hz REAL NOT NULL,
  spl_db REAL NOT NULL,
- phase_degrees REAL,  
+ phase_degrees REAL,
  values_json TEXT NOT NULL,
  PRIMARY KEY(measurement_id, ordinal)
 ) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS iem_identity_decisions (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ kind TEXT NOT NULL CHECK(kind IN ('merge', 'dismiss')),
+ left_brand TEXT NOT NULL, left_name TEXT NOT NULL,
+ right_brand TEXT NOT NULL, right_name TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS iem_identity_aliases (
+ brand_key TEXT NOT NULL, iem_key TEXT NOT NULL,
+ canonical_brand TEXT NOT NULL, canonical_name TEXT NOT NULL,
+ PRIMARY KEY (brand_key, iem_key)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS brand_identity_aliases (
+ brand_key TEXT PRIMARY KEY,
+ canonical_brand TEXT NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS phone_catalog (
+ record_id INTEGER PRIMARY KEY REFERENCES phones(id),
+ source_id INTEGER NOT NULL REFERENCES sources(id),
+ source TEXT NOT NULL,
+ source_name TEXT NOT NULL,
+ type TEXT NOT NULL,
+ folder TEXT NOT NULL,
+ data_url TEXT NOT NULL,
+ config_resource_id INTEGER REFERENCES resources(id),
+ brand_key TEXT NOT NULL,
+ iem_key TEXT NOT NULL,
+ brand TEXT NOT NULL,
+ name TEXT NOT NULL,
+ raw_brand_key TEXT NOT NULL,
+ raw_iem_key TEXT NOT NULL,
+ raw_brand TEXT NOT NULL,
+ raw_name TEXT NOT NULL,
+ price TEXT NOT NULL,
+ review_score TEXT NOT NULL,
+ review_link TEXT NOT NULL,
+ shop_link TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS resource_timestamps ON resources(id, fetched_at);
 CREATE INDEX IF NOT EXISTS phones_name ON phones(name);
 CREATE INDEX IF NOT EXISTS measurement_frequency ON measurement_points(measurement_id,frequency_hz);
+CREATE INDEX IF NOT EXISTS phone_catalog_brand_iem ON phone_catalog(brand_key, iem_key, source_id, brand, name);
+CREATE INDEX IF NOT EXISTS phone_catalog_iem ON phone_catalog(iem_key, brand_key, source_id, brand, name);
 PRAGMA user_version = 1;

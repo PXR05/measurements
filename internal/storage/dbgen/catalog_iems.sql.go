@@ -12,7 +12,7 @@ import (
 const countIEMs = `-- name: CountIEMs :one
 SELECT count(*) FROM (
     SELECT 1
-    FROM api_current_phone_catalog
+    FROM phone_catalog
     WHERE instr(iem_key, lower(?1)) > 0
         AND (?2 = '[]' OR brand_key IN (SELECT value FROM json_each(?2)))
     GROUP BY brand_key, iem_key
@@ -37,7 +37,7 @@ SELECT brand_key,
     brand AS brand_name,
     name,
     count(DISTINCT source_id) AS source_count
-FROM api_current_phone_catalog
+FROM phone_catalog
 WHERE brand_key = ?1 AND iem_key = ?2
 GROUP BY brand_key, iem_key
 `
@@ -74,7 +74,7 @@ SELECT brand_key,
     brand AS brand_name,
     name,
     count(DISTINCT source_id) AS source_count
-FROM api_current_phone_catalog
+FROM phone_catalog
 WHERE instr(iem_key, lower(?1)) > 0
     AND (?2 = '[]' OR brand_key IN (SELECT value FROM json_each(?2)))
 GROUP BY brand_key, iem_key

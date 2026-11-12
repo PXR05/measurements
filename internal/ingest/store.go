@@ -3,7 +3,6 @@ package ingest
 import (
 	"context"
 	"database/sql"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,9 +12,6 @@ import (
 	"measurements/internal/storage"
 	"measurements/internal/storage/dbgen"
 )
-
-//go:embed schema.sql
-var schema string
 
 func openStore(path string) (*sql.DB, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -35,10 +31,7 @@ func openStore(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("database schema %d is newer than supported version 1", version)
 	}
-	if _, err = db.Exec("PRAGMA journal_mode=WAL; " + schema); err == nil {
-		err = storage.InstallViews(context.Background(), db)
-	}
-	if err != nil {
+	if err = storage.InitSchema(context.Background(), db); err != nil {
 		db.Close()
 		return nil, err
 	}

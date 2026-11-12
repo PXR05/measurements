@@ -13,7 +13,7 @@ SELECT record_id,
     review_score,
     review_link,
     shop_link
-FROM api_current_phone_catalog
+FROM phone_catalog
 WHERE brand_key = sqlc.arg(brand_key) AND iem_key = sqlc.arg(iem_key)
 ORDER BY source COLLATE NOCASE, type COLLATE NOCASE, source_id, record_id;
 
@@ -27,7 +27,7 @@ SELECT m.id,
     m.point_count,
     r.url,
     r.fetched_at
-FROM api_current_phone_catalog p
+FROM phone_catalog p
 JOIN variants v ON v.phone_id = p.record_id
 JOIN measurements m ON m.variant_id = v.id
 JOIN resources r ON r.id = m.resource_id

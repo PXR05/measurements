@@ -210,7 +210,7 @@ func Seed(ctx context.Context, o Options) (stats Stats, retErr error) {
 		return stats, fmt.Errorf("site %q not found", o.Site)
 	}
 
-	if err = storage.InstallViews(ctx, db); err != nil {
+	if err = storage.RefreshCatalog(ctx, db); err != nil {
 		return stats, err
 	}
 

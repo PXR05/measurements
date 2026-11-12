@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"measurements/internal/storage/dbgen"
 )
 
 var numbers = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)*`)
@@ -249,8 +251,15 @@ func (s *Store) AutoMerge(ctx context.Context, backupDir string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	q := dbgen.New(tx)
 	for _, d := range merges {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO iem_identity_decisions(kind,left_brand,left_name,right_brand,right_name) VALUES(?,?,?,?,?)`, d.Kind, d.Left.Brand, d.Left.Name, d.Right.Brand, d.Right.Name); err != nil {
+		if err = q.InsertIdentityDecision(ctx, dbgen.InsertIdentityDecisionParams{
+			Kind:       d.Kind,
+			LeftBrand:  d.Left.Brand,
+			LeftName:   d.Left.Name,
+			RightBrand: d.Right.Brand,
+			RightName:  d.Right.Name,
+		}); err != nil {
 			return 0, err
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"measurements/internal/storage"
+	"measurements/internal/storage/dbgen"
 )
 
 type Key struct {
@@ -48,7 +49,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		err = fmt.Errorf("expected an existing schema 1 seed database; run cmd/seed first")
 	}
 	if err == nil {
-		err = storage.InstallViews(ctx, db)
+		err = storage.InitSchema(ctx, db)
 	}
 	if err != nil {
 		db.Close()
@@ -57,28 +58,25 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	return &Store{DB: db}, nil
 }
 
-type queryer interface {
-	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
-}
-
-func decisions(ctx context.Context, q queryer) ([]Decision, error) {
-	rows, err := q.QueryContext(ctx, `SELECT id,kind,left_brand,left_name,right_brand,right_name FROM iem_identity_decisions ORDER BY id`)
+func decisions(ctx context.Context, db dbgen.DBTX) ([]Decision, error) {
+	rows, err := dbgen.New(db).ListIdentityDecisions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	result := []Decision{}
-	for rows.Next() {
-		var d Decision
-		if err := rows.Scan(&d.ID, &d.Kind, &d.Left.Brand, &d.Left.Name, &d.Right.Brand, &d.Right.Name); err != nil {
-			return nil, err
+	result := make([]Decision, 0, len(rows))
+	for _, r := range rows {
+		d := Decision{
+			ID:    r.ID,
+			Kind:  r.Kind,
+			Left:  Key{Brand: r.LeftBrand, Name: r.LeftName},
+			Right: Key{Brand: r.RightBrand, Name: r.RightName},
 		}
 		if d.Left.Name == "" && d.Right.Name == "" {
 			d.Scope = "brand"
 		}
 		result = append(result, d)
 	}
-	return result, rows.Err()
+	return result, nil
 }
 
 func (s *Store) Decisions(ctx context.Context) ([]Decision, error) { return decisions(ctx, s.DB) }
@@ -185,10 +183,11 @@ func rebuild(ctx context.Context, tx *sql.Tx) error {
 	if err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, "DELETE FROM iem_identity_aliases"); err != nil {
+	q := dbgen.New(tx)
+	if err = q.ClearIEMAliases(ctx); err != nil {
 		return err
 	}
-	if _, err = tx.ExecContext(ctx, "DELETE FROM brand_identity_aliases"); err != nil {
+	if err = q.ClearBrandAliases(ctx); err != nil {
 		return err
 	}
 	for k, v := range r {
@@ -196,12 +195,20 @@ func rebuild(ctx context.Context, tx *sql.Tx) error {
 			continue
 		}
 		if k.Name == "" {
-			if _, err = tx.ExecContext(ctx, `INSERT INTO brand_identity_aliases VALUES(?,?)`, k.Brand, v.Brand); err != nil {
+			if err = q.InsertBrandAlias(ctx, dbgen.InsertBrandAliasParams{
+				BrandKey:       k.Brand,
+				CanonicalBrand: v.Brand,
+			}); err != nil {
 				return err
 			}
 			continue
 		}
-		if _, err = tx.ExecContext(ctx, `INSERT INTO iem_identity_aliases VALUES(?,?,?,?)`, k.Brand, k.Name, v.Brand, v.Name); err != nil {
+		if err = q.InsertIEMAlias(ctx, dbgen.InsertIEMAliasParams{
+			BrandKey:       k.Brand,
+			IEMKey:         k.Name,
+			CanonicalBrand: v.Brand,
+			CanonicalName:  v.Name,
+		}); err != nil {
 			return err
 		}
 	}
@@ -225,22 +232,28 @@ func (s *Store) Decide(ctx context.Context, d Decision) error {
 	if r.find(d.Left) == r.find(d.Right) {
 		return errors.New("these identities are already merged; refresh the queue")
 	}
+	q := dbgen.New(tx)
 	for _, k := range []Key{d.Left, d.Right} {
 		var exists bool
-		query := `SELECT EXISTS(SELECT 1 FROM api_current_phone_catalog WHERE brand_key=? AND iem_key=?)`
-		args := []any{k.Brand, k.Name}
 		if k.Name == "" {
-			query = `SELECT EXISTS(SELECT 1 FROM api_raw_phone_catalog p LEFT JOIN brand_identity_aliases a ON a.brand_key=p.brand_key WHERE coalesce(a.canonical_brand,p.brand_key)=?)`
-			args = []any{k.Brand}
+			exists, err = q.BrandExists(ctx, k.Brand)
+		} else {
+			exists, err = q.IEMExists(ctx, dbgen.IEMExistsParams{BrandKey: k.Brand, IEMKey: k.Name})
 		}
-		if err = tx.QueryRowContext(ctx, query, args...).Scan(&exists); err != nil {
+		if err != nil {
 			return err
 		}
 		if !exists {
 			return errors.New("identity is no longer in the current catalog; refresh the queue")
 		}
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO iem_identity_decisions(kind,left_brand,left_name,right_brand,right_name) VALUES(?,?,?,?,?)`, d.Kind, d.Left.Brand, d.Left.Name, d.Right.Brand, d.Right.Name); err != nil {
+	if err = q.InsertIdentityDecision(ctx, dbgen.InsertIdentityDecisionParams{
+		Kind:       d.Kind,
+		LeftBrand:  d.Left.Brand,
+		LeftName:   d.Left.Name,
+		RightBrand: d.Right.Brand,
+		RightName:  d.Right.Name,
+	}); err != nil {
 		return err
 	}
 	if err = rebuild(ctx, tx); err != nil {
@@ -255,7 +268,7 @@ func (s *Store) Undo(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `DELETE FROM iem_identity_decisions WHERE id=(SELECT max(id) FROM iem_identity_decisions)`); err != nil {
+	if err = dbgen.New(tx).DeleteLatestIdentityDecision(ctx); err != nil {
 		return err
 	}
 	if err = rebuild(ctx, tx); err != nil {
@@ -276,15 +289,22 @@ func (s *Store) Restore(ctx context.Context, b Backup) error {
 		return err
 	}
 	defer tx.Rollback()
-	var count int
-	if err = tx.QueryRowContext(ctx, "SELECT count(*) FROM iem_identity_decisions").Scan(&count); err != nil {
+	q := dbgen.New(tx)
+	count, err := q.CountIdentityDecisions(ctx)
+	if err != nil {
 		return err
 	}
 	if count != 0 {
 		return errors.New("restore requires an empty decision log; existing reviews were kept")
 	}
 	for _, d := range b.Decisions {
-		if _, err = tx.ExecContext(ctx, `INSERT INTO iem_identity_decisions(kind,left_brand,left_name,right_brand,right_name) VALUES(?,?,?,?,?)`, d.Kind, d.Left.Brand, d.Left.Name, d.Right.Brand, d.Right.Name); err != nil {
+		if err = q.InsertIdentityDecision(ctx, dbgen.InsertIdentityDecisionParams{
+			Kind:       d.Kind,
+			LeftBrand:  d.Left.Brand,
+			LeftName:   d.Left.Name,
+			RightBrand: d.Right.Brand,
+			RightName:  d.Right.Name,
+		}); err != nil {
 			return err
 		}
 	}

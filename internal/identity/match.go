@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"unicode"
+
+	"measurements/internal/storage/dbgen"
 )
 
 type Record struct {
@@ -36,21 +38,25 @@ func (s *Store) catalog(ctx context.Context) ([]catalogRecord, error) {
 	return catalog(ctx, s.DB)
 }
 
-func catalog(ctx context.Context, q queryer) ([]catalogRecord, error) {
-	rows, err := q.QueryContext(ctx, `SELECT brand_key,iem_key,brand,name,source,type,record_id FROM api_raw_phone_catalog ORDER BY brand_key,iem_key,source,record_id`)
+func catalog(ctx context.Context, db dbgen.DBTX) ([]catalogRecord, error) {
+	rows, err := dbgen.New(db).ListRawPhoneCatalog(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	result := []catalogRecord{}
-	for rows.Next() {
-		var r catalogRecord
-		if err = rows.Scan(&r.key.Brand, &r.key.Name, &r.record.Brand, &r.record.Name, &r.record.Source, &r.record.Type, &r.record.ID); err != nil {
-			return nil, err
-		}
-		result = append(result, r)
+	result := make([]catalogRecord, 0, len(rows))
+	for _, r := range rows {
+		result = append(result, catalogRecord{
+			key: Key{Brand: r.RawBrandKey, Name: r.RawIEMKey},
+			record: Record{
+				Brand:  r.RawBrand,
+				Name:   r.RawName,
+				Source: r.Source,
+				Type:   r.Type,
+				ID:     r.RecordID,
+			},
+		})
 	}
-	return result, rows.Err()
+	return result, nil
 }
 
 func products(records []catalogRecord, ds []Decision) ([]Product, roots, error) {
