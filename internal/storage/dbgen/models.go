@@ -8,6 +8,40 @@ import (
 	"database/sql"
 )
 
+type IemConsensus struct {
+	BrandKey         string
+	IEMKey           string
+	RigType          string
+	SourceCount      int64
+	MeasurementCount int64
+	SpreadDB         float64
+	MedianCurve      []byte
+	MinCurve         []byte
+	MaxCurve         []byte
+	P25Curve         []byte
+	P75Curve         []byte
+}
+
+type IemSimilarity struct {
+	BrandKey           string
+	IEMKey             string
+	RigType            string
+	Rank               int64
+	SimilarBrandKey    string
+	SimilarIEMKey      string
+	SimilarBrand       string
+	SimilarName        string
+	SimilarSourceCount int64
+	SimilarPriceUSD    sql.NullFloat64
+	DistanceDB         float64
+}
+
+type MeasurementCurve struct {
+	MeasurementID int64
+	NormOffsetDB  float64
+	Curve         []byte
+}
+
 type PhoneCatalog struct {
 	RecordID         int64
 	SourceID         int64
@@ -26,6 +60,7 @@ type PhoneCatalog struct {
 	RawBrand         string
 	RawName          string
 	Price            string
+	PriceUSD         sql.NullFloat64
 	ReviewScore      string
 	ReviewLink       string
 	ShopLink         string

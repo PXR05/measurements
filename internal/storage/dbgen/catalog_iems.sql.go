@@ -7,6 +7,7 @@ package dbgen
 
 import (
 	"context"
+	"database/sql"
 )
 
 const countIEMs = `-- name: CountIEMs :one
@@ -36,6 +37,7 @@ SELECT brand_key,
     iem_key,
     brand AS brand_name,
     name,
+    avg(price_usd) AS price_usd,
     count(DISTINCT source_id) AS source_count
 FROM phone_catalog
 WHERE brand_key = ?1 AND iem_key = ?2
@@ -52,6 +54,7 @@ type GetIEMRow struct {
 	IEMKey      string
 	BrandName   string
 	Name        string
+	PriceUSD    sql.NullFloat64
 	SourceCount int64
 }
 
@@ -63,6 +66,7 @@ func (q *Queries) GetIEM(ctx context.Context, arg GetIEMParams) (GetIEMRow, erro
 		&i.IEMKey,
 		&i.BrandName,
 		&i.Name,
+		&i.PriceUSD,
 		&i.SourceCount,
 	)
 	return i, err
@@ -73,6 +77,7 @@ SELECT brand_key,
     iem_key,
     brand AS brand_name,
     name,
+    avg(price_usd) AS price_usd,
     count(DISTINCT source_id) AS source_count
 FROM phone_catalog
 WHERE instr(iem_key, lower(?1)) > 0
@@ -84,6 +89,7 @@ ORDER BY
             WHEN 'name' THEN iem_key
             WHEN 'brand' THEN brand_key
             WHEN 'sources' THEN count(DISTINCT source_id)
+            WHEN 'price' THEN coalesce(avg(price_usd), 1e18)
         END
     END ASC,
     CASE WHEN ?4 = 'desc' THEN
@@ -91,6 +97,7 @@ ORDER BY
             WHEN 'name' THEN iem_key
             WHEN 'brand' THEN brand_key
             WHEN 'sources' THEN count(DISTINCT source_id)
+            WHEN 'price' THEN coalesce(avg(price_usd), -1)
         END
     END DESC,
     brand_key, iem_key
@@ -111,6 +118,7 @@ type ListIEMsRow struct {
 	IEMKey      string
 	BrandName   string
 	Name        string
+	PriceUSD    sql.NullFloat64
 	SourceCount int64
 }
 
@@ -135,6 +143,7 @@ func (q *Queries) ListIEMs(ctx context.Context, arg ListIEMsParams) ([]ListIEMsR
 			&i.IEMKey,
 			&i.BrandName,
 			&i.Name,
+			&i.PriceUSD,
 			&i.SourceCount,
 		); err != nil {
 			return nil, err

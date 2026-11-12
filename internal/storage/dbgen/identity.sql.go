@@ -273,7 +273,7 @@ INSERT INTO phone_catalog (
     record_id, source_id, source, source_name, type, folder, data_url, config_resource_id,
     brand_key, iem_key, brand, name,
     raw_brand_key, raw_iem_key, raw_brand, raw_name,
-    price, review_score, review_link, shop_link
+    price, price_usd, review_score, review_link, shop_link
 )
 WITH latest_books AS (
     SELECT pb.id, pb.source_id, pb.config_resource_id,
@@ -332,7 +332,15 @@ SELECT r.record_id, r.source_id, r.source, r.source_name,
         min(r.raw_name) OVER (PARTITION BY r.brand_key, r.iem_key)
     ) AS name,
     r.raw_brand_key, r.raw_iem_key, r.raw_brand, r.raw_name,
-    r.price, r.review_score, r.review_link, r.shop_link
+    r.price,
+    CASE
+        WHEN replace(trim(r.price, '$ '), ',', '') GLOB '[0-9]*'
+         AND NOT replace(trim(r.price, '$ '), ',', '') GLOB '*[^0-9.]*'
+         AND CAST(replace(trim(r.price, '$ '), ',', '') AS REAL) > 0
+         AND CAST(replace(trim(r.price, '$ '), ',', '') AS REAL) <= 20000
+        THEN CAST(replace(trim(r.price, '$ '), ',', '') AS REAL)
+    END AS price_usd,
+    r.review_score, r.review_link, r.shop_link
 FROM resolved r
 JOIN canonical_brands cb ON cb.brand_key = r.brand_key
 `

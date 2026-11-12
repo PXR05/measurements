@@ -134,10 +134,44 @@ CREATE TABLE IF NOT EXISTS phone_catalog (
  raw_brand TEXT NOT NULL,
  raw_name TEXT NOT NULL,
  price TEXT NOT NULL,
+ price_usd REAL,
  review_score TEXT NOT NULL,
  review_link TEXT NOT NULL,
  shop_link TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS measurement_curves (
+ measurement_id INTEGER PRIMARY KEY REFERENCES measurements(id),
+ norm_offset_db REAL NOT NULL,
+ curve BLOB NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS iem_consensus (
+ brand_key TEXT NOT NULL,
+ iem_key TEXT NOT NULL,
+ rig_type TEXT NOT NULL,
+ source_count INTEGER NOT NULL,
+ measurement_count INTEGER NOT NULL,
+ spread_db REAL NOT NULL,
+ median_curve BLOB NOT NULL,
+ min_curve BLOB NOT NULL,
+ max_curve BLOB NOT NULL,
+ p25_curve BLOB NOT NULL,
+ p75_curve BLOB NOT NULL,
+ PRIMARY KEY (brand_key, iem_key, rig_type)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS iem_similarities (
+ brand_key TEXT NOT NULL,
+ iem_key TEXT NOT NULL,
+ rig_type TEXT NOT NULL,
+ rank INTEGER NOT NULL,
+ similar_brand_key TEXT NOT NULL,
+ similar_iem_key TEXT NOT NULL,
+ similar_brand TEXT NOT NULL,
+ similar_name TEXT NOT NULL,
+ similar_source_count INTEGER NOT NULL,
+ similar_price_usd REAL,
+ distance_db REAL NOT NULL,
+ PRIMARY KEY (brand_key, iem_key, rig_type, rank)
+) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS resource_timestamps ON resources(id, fetched_at);
 CREATE INDEX IF NOT EXISTS phones_name ON phones(name);
 CREATE INDEX IF NOT EXISTS measurement_frequency ON measurement_points(measurement_id,frequency_hz);

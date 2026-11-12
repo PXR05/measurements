@@ -3,6 +3,7 @@ SELECT brand_key,
     iem_key,
     brand AS brand_name,
     name,
+    avg(price_usd) AS price_usd,
     count(DISTINCT source_id) AS source_count
 FROM phone_catalog
 WHERE instr(iem_key, lower(sqlc.arg(search_text))) > 0
@@ -14,6 +15,7 @@ ORDER BY
             WHEN 'name' THEN iem_key
             WHEN 'brand' THEN brand_key
             WHEN 'sources' THEN count(DISTINCT source_id)
+            WHEN 'price' THEN coalesce(avg(price_usd), 1e18)
         END
     END ASC,
     CASE WHEN sqlc.arg(direction) = 'desc' THEN
@@ -21,6 +23,7 @@ ORDER BY
             WHEN 'name' THEN iem_key
             WHEN 'brand' THEN brand_key
             WHEN 'sources' THEN count(DISTINCT source_id)
+            WHEN 'price' THEN coalesce(avg(price_usd), -1)
         END
     END DESC,
     brand_key, iem_key
@@ -40,6 +43,7 @@ SELECT brand_key,
     iem_key,
     brand AS brand_name,
     name,
+    avg(price_usd) AS price_usd,
     count(DISTINCT source_id) AS source_count
 FROM phone_catalog
 WHERE brand_key = sqlc.arg(brand_key) AND iem_key = sqlc.arg(iem_key)

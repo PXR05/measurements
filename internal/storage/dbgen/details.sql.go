@@ -59,12 +59,14 @@ SELECT m.id,
     m.channel,
     m.sample,
     m.point_count,
+    mc.norm_offset_db,
     r.url,
     r.fetched_at
 FROM phone_catalog p
 JOIN variants v ON v.phone_id = p.record_id
 JOIN measurements m ON m.variant_id = v.id
 JOIN resources r ON r.id = m.resource_id
+LEFT JOIN measurement_curves mc ON mc.measurement_id = m.id AND length(mc.curve) > 0
 WHERE p.brand_key = ?1 AND p.iem_key = ?2
     AND m.point_count > 0 AND r.status BETWEEN 200 AND 299
     AND m.id = (
@@ -80,15 +82,16 @@ type ListIEMMeasurementsParams struct {
 }
 
 type ListIEMMeasurementsRow struct {
-	ID         int64
-	RecordID   int64
-	Label      string
-	FileStem   string
-	Channel    string
-	Sample     string
-	PointCount int64
-	URL        string
-	FetchedAt  string
+	ID           int64
+	RecordID     int64
+	Label        string
+	FileStem     string
+	Channel      string
+	Sample       string
+	PointCount   int64
+	NormOffsetDB sql.NullFloat64
+	URL          string
+	FetchedAt    string
 }
 
 func (q *Queries) ListIEMMeasurements(ctx context.Context, arg ListIEMMeasurementsParams) ([]ListIEMMeasurementsRow, error) {
@@ -108,6 +111,7 @@ func (q *Queries) ListIEMMeasurements(ctx context.Context, arg ListIEMMeasuremen
 			&i.Channel,
 			&i.Sample,
 			&i.PointCount,
+			&i.NormOffsetDB,
 			&i.URL,
 			&i.FetchedAt,
 		); err != nil {

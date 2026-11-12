@@ -48,11 +48,16 @@ func InitSchema(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	defer tx.Rollback()
-	hasCatalog, err := dbgen.New(tx).HasPhoneCatalog(ctx)
+	q := dbgen.New(tx)
+	hasCatalog, err := q.HasPhoneCatalog(ctx)
 	if err != nil {
 		return err
 	}
-	if !hasCatalog {
+	hasConsensus, err := q.HasIEMConsensus(ctx)
+	if err != nil {
+		return err
+	}
+	if !hasCatalog || !hasConsensus {
 		if err = RefreshCatalog(ctx, tx); err != nil {
 			return err
 		}
@@ -65,5 +70,8 @@ func RefreshCatalog(ctx context.Context, db dbgen.DBTX) error {
 	if err := q.ClearPhoneCatalog(ctx); err != nil {
 		return err
 	}
-	return q.PopulatePhoneCatalog(ctx)
+	if err := q.PopulatePhoneCatalog(ctx); err != nil {
+		return err
+	}
+	return RefreshAnalytics(ctx, db)
 }
